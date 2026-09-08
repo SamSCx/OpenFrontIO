@@ -236,6 +236,9 @@ export class UnitPass {
   // (instanceIdx, lastX, lastY, x, y) recorded each tick, lerped into the
   // missile buffer in drawMissiles.
   private smoothSegs: number[] = [];
+  // Ground and sea units use their own buffer, but the same segment format as
+  // missiles. Keeping these separate avoids rewriting the unrelated buffer.
+  private groundSmoothSegs: number[] = [];
   private lastUnitsUpdateMs = 0;
   /** Simulation tick duration in ms (Config.msPerTick). */
   private tickIntervalMs: number;
@@ -453,6 +456,7 @@ export class UnitPass {
     this.groundCount = 0;
     this.missileCount = 0;
     this.smoothSegs.length = 0;
+    this.groundSmoothSegs.length = 0;
 
     for (const unit of units.values()) {
       if (!unit.isActive || unit.waitTicks > 0) continue;
@@ -541,6 +545,14 @@ export class UnitPass {
           this.emitMissile(lx, ly, unit.ownerID, atlasIdx, flags);
         }
       } else {
+        // The simulation advances mobile units in discrete tiles. Interpolate
+        // every ground/sea unit here (ships and trains) rather than letting it
+        // visually jump once per simulation tick.
+        if (unit.lastPos !== unit.pos) {
+          const lx = unit.lastPos % this.mapW;
+          const ly = (unit.lastPos - lx) / this.mapW;
+          this.groundSmoothSegs.push(this.groundCount, lx, ly, x, y);
+        }
         this.emitGround(x, y, unit.ownerID, atlasIdx, flags);
       }
     }
@@ -629,6 +641,7 @@ export class UnitPass {
   /** Draw ground/sea units (boats, trains). Render below structures. */
   drawGround(cameraMatrix: Float32Array): void {
     if (this.groundCount === 0) return;
+    this.applyGroundSmoothing();
     this.bindProgram(cameraMatrix);
     const gl = this.gl;
     gl.bindVertexArray(this.groundVao);
@@ -668,6 +681,32 @@ export class UnitPass {
       f32,
       0,
       this.missileCount * FLOATS_PER_INSTANCE,
+    );
+  }
+
+  /** Lerp boats and trains from lastPos→pos during the current simulation
+   * tick, matching missile motion while preserving the ground-buffer layout. */
+  private applyGroundSmoothing(): void {
+    const segs = this.groundSmoothSegs;
+    if (segs.length === 0) return;
+    const alpha = Math.min(
+      1,
+      (performance.now() - this.lastUnitsUpdateMs) / this.tickIntervalMs,
+    );
+    const f32 = this.groundBuf.float32;
+    for (let i = 0; i < segs.length; i += SMOOTH_SEG_STRIDE) {
+      const off = segs[i] * FLOATS_PER_INSTANCE;
+      f32[off + 0] = segs[i + 1] + (segs[i + 3] - segs[i + 1]) * alpha;
+      f32[off + 1] = segs[i + 2] + (segs[i + 4] - segs[i + 2]) * alpha;
+    }
+    const gl = this.gl;
+    gl.bindBuffer(gl.ARRAY_BUFFER, this.groundBuf.buffer);
+    gl.bufferSubData(
+      gl.ARRAY_BUFFER,
+      0,
+      f32,
+      0,
+      this.groundCount * FLOATS_PER_INSTANCE,
     );
   }
 
