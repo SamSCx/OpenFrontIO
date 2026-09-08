@@ -150,6 +150,59 @@ describe("UnitPass.applyMissileSmoothing", () => {
   });
 });
 
+describe("UnitPass.applyGroundSmoothing", () => {
+  it("interpolates a moving warship in the ground buffer", () => {
+    const f32 = new Float32Array(2 * FLOATS_PER_INSTANCE);
+    const bufferSubData = vi.fn();
+    const gl = {
+      ARRAY_BUFFER: 0x8892,
+      bindBuffer: vi.fn(),
+      bufferSubData,
+    };
+    vi.spyOn(performance, "now").mockReturnValue(1050);
+
+    const pass = Object.create(UnitPass.prototype) as UnitPass;
+    Object.assign(pass, {
+      gl,
+      groundSmoothSegs: [1, 10, 20, 30, 40],
+      groundCount: 2,
+      groundBuf: { float32: f32, buffer: {} },
+      lastUnitsUpdateMs: 1000,
+      tickIntervalMs: TICK_MS,
+    });
+
+    (
+      pass as unknown as { applyGroundSmoothing(): void }
+    ).applyGroundSmoothing();
+
+    const off = FLOATS_PER_INSTANCE;
+    expect(f32[off]).toBeCloseTo(20);
+    expect(f32[off + 1]).toBeCloseTo(30);
+    expect(bufferSubData).toHaveBeenCalledWith(
+      gl.ARRAY_BUFFER,
+      0,
+      f32,
+      0,
+      2 * FLOATS_PER_INSTANCE,
+    );
+  });
+
+  it("does not upload when no ground units moved", () => {
+    const bufferSubData = vi.fn();
+    const pass = Object.create(UnitPass.prototype) as UnitPass;
+    Object.assign(pass, {
+      gl: { ARRAY_BUFFER: 0x8892, bindBuffer: vi.fn(), bufferSubData },
+      groundSmoothSegs: [],
+    });
+
+    (
+      pass as unknown as { applyGroundSmoothing(): void }
+    ).applyGroundSmoothing();
+
+    expect(bufferSubData).not.toHaveBeenCalled();
+  });
+});
+
 describe("flickerHashByte", () => {
   const fract = (x: number, y: number) => {
     const v = x * 0.1731 + y * 0.3179;
