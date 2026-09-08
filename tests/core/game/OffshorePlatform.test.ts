@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   OFFSHORE_PLATFORM_COAST_RANGE,
   OffshorePlatformPlacementFailure,
+  validateConstructionShipDeployment,
   validateOffshorePlatformPlacement,
 } from "../../../src/core/game/OffshorePlatform";
 
@@ -34,7 +35,7 @@ describe("validateOffshorePlatformPlacement", () => {
   it("rejects water beyond the owned-coast deployment range", () => {
     expect(placement({ ownedShoreTiles: [0] })).toEqual({
       valid: false,
-      reason: OffshorePlatformPlacementFailure.TooFarFromOwnedCoast,
+      reason: OffshorePlatformPlacementFailure.ConstructionShipTooFar,
     });
   });
 
@@ -49,6 +50,26 @@ describe("validateOffshorePlatformPlacement", () => {
     expect(OFFSHORE_PLATFORM_COAST_RANGE).toBe(6);
     expect(placement({ ownedShoreTiles: [0], coastRange: 42 })).toEqual({
       valid: true,
+    });
+  });
+});
+
+describe("validateConstructionShipDeployment", () => {
+  const deployment = (constructionShipTile: number) =>
+    validateConstructionShipDeployment({
+      target: 42,
+      constructionShipTile,
+      isWater: () => true,
+      ownedShoreTiles: [36],
+      platformTiles: new Set(),
+      manhattanDist: (a, b) => Math.abs(a - b),
+    });
+
+  it("requires the construction ship to be at the deployment site", () => {
+    expect(deployment(41)).toEqual({ valid: true });
+    expect(deployment(40)).toEqual({
+      valid: false,
+      reason: OffshorePlatformPlacementFailure.TooFarFromOwnedCoast,
     });
   });
 });

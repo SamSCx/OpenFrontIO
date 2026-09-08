@@ -14,6 +14,7 @@ export const OFFSHORE_PLATFORM_COAST_RANGE = 6;
 export enum OffshorePlatformPlacementFailure {
   NotWater = "not_water",
   TooFarFromOwnedCoast = "too_far_from_owned_coast",
+  ConstructionShipTooFar = "construction_ship_too_far",
   Occupied = "occupied",
 }
 
@@ -33,6 +34,13 @@ export interface OffshorePlatformPlacementInput {
   coastRange?: number;
 }
 
+/** Data available when a construction ship deploys a platform. */
+export interface ConstructionShipDeploymentInput extends OffshorePlatformPlacementInput {
+  constructionShipTile: TileRef;
+  /** Deployment is deliberately short-range: the ship must be at the site. */
+  deploymentRange?: number;
+}
+
 /** Validates a construction-ship deployment target. */
 export function validateOffshorePlatformPlacement(
   input: OffshorePlatformPlacementInput,
@@ -49,6 +57,29 @@ export function validateOffshorePlatformPlacement(
     (shore) => input.manhattanDist(shore, input.target) <= coastRange,
   );
   if (!hasOwnedCoast) {
+    return {
+      valid: false,
+      reason: OffshorePlatformPlacementFailure.ConstructionShipTooFar,
+    };
+  }
+  return { valid: true };
+}
+
+/**
+ * Validates both the water-site policy and the construction ship's position.
+ * The execution layer can consume the ship only after this succeeds.
+ */
+export function validateConstructionShipDeployment(
+  input: ConstructionShipDeploymentInput,
+): OffshorePlatformPlacement {
+  const placement = validateOffshorePlatformPlacement(input);
+  if (!placement.valid) return placement;
+
+  const deploymentRange = input.deploymentRange ?? 1;
+  if (
+    input.manhattanDist(input.constructionShipTile, input.target) >
+    deploymentRange
+  ) {
     return {
       valid: false,
       reason: OffshorePlatformPlacementFailure.TooFarFromOwnedCoast,
